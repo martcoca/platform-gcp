@@ -15,26 +15,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: opentofu/setup-opentofu@v1
-      - uses: google-github-actions/auth@v2
+        with:
+          tofu_version: 1.8.3
+          tofu_wrapper: false
+      - uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       - name: Initialize remote state
-        run: tofu init -input=false -backend-config="bucket=${{ secrets.GCP_STATE_BUCKET }}"
+        shell: bash
+        run: |
+          if ! tofu init -input=false -backend-config="bucket=${{ secrets.GCP_STATE_BUCKET }}" >/dev/null 2>&1; then
+            printf '%s\n' 'Remote state initialization failed.' >&2
+            exit 1
+          fi
       - name: Plan and enforce cost guard
+        env:
+          TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_gcp_project_number: ${{ secrets.GCP_PROJECT_NUMBER }}
+          TF_VAR_state_bucket_name: ${{ secrets.GCP_STATE_BUCKET }}
+          TF_VAR_github_repository: ${{ secrets.GITHUB_REPOSITORY_IDENTITY }}
+          TF_VAR_github_ref: refs/heads/main
         shell: bash
         run: |
           set +e
           set -o pipefail
-          tofu plan -input=false -json \
-            -var="gcp_project_id=${{ secrets.GCP_PROJECT_ID }}" \
-            -var="gcp_project_number=${{ secrets.GCP_PROJECT_NUMBER }}" \
-            -var="state_bucket_name=${{ secrets.GCP_STATE_BUCKET }}" \
-            -var="github_repository=${{ secrets.GITHUB_REPOSITORY_IDENTITY }}" \
-            -var='github_ref=refs/heads/main' \
-            | scripts/cost-guard.sh /dev/stdin
-          plan_status=${PIPESTATUS[0]}
-          guard_status=${PIPESTATUS[1]}
+          tofu plan -input=false -json 2>/dev/null | scripts/cost-guard.sh /dev/stdin 2>/dev/null
+          statuses=("${PIPESTATUS[@]}")
+          plan_status=${statuses[0]}
+          guard_status=${statuses[1]}
           set -e
           if [[ "$plan_status" -ne 0 ]]; then
             exit 1
