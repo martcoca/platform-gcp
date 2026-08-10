@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: opentofu/setup-opentofu@v1
         with:
-          tofu_version: 1.8.3
+          tofu_version: 1.12.5
           tofu_wrapper: false
       - uses: google-github-actions/auth@v3
         with:
@@ -46,12 +46,12 @@ jobs:
           guard_status=${statuses[1]}
           set -e
           if [[ "$plan_status" -ne 0 ]]; then
+            printf '%s\n' 'Guarded plan result: plan failure.' >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           case "$guard_status" in
-            0) ;;
-            1|2) exit 1 ;;
-            *) exit 1 ;;
+            0) printf '%s\n' 'Guarded plan result: allow.' >> "$GITHUB_STEP_SUMMARY" ;;
+            1) printf '%s\n' 'Guarded plan result: deny.' >> "$GITHUB_STEP_SUMMARY"; exit 1 ;;
+            2) printf '%s\n' 'Guarded plan result: undecidable.' >> "$GITHUB_STEP_SUMMARY"; exit 1 ;;
+            *) printf '%s\n' 'Guarded plan result: undecidable.' >> "$GITHUB_STEP_SUMMARY"; exit 1 ;;
           esac
-      - name: Publish bounded result
-        run: printf '%s\n' 'Guarded plan completed successfully.' >> "$GITHUB_STEP_SUMMARY"
