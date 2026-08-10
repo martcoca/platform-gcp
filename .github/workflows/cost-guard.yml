@@ -1,0 +1,16 @@
+name: Cost guard
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact cost guard exit contract
+        run: scripts/test-cost-guard.sh

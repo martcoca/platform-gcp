@@ -26,9 +26,6 @@ Copy `config/example/landing-zone.tfvars` to the ignored
 identity must come from the immutable GitHub OIDC subject and retain both numeric IDs.
 The project number is checked against the project resolved from provider configuration.
 
-The billing account input records the already-linked account identity for apply-time
-review; this root does not mutate billing.
-
 ## Bootstrap and approval boundary
 
 The GCS backend requires its bucket to exist before backend initialization, and this
@@ -64,12 +61,38 @@ tofu init -migrate-state \
 Do not pass credentials in backend arguments. Local users authenticate with Application
 Default Credentials; GitHub Actions uses Workload Identity Federation.
 
-After the approved apply, store the sensitive `workload_identity_provider` and
-`ci_service_account_email` outputs in repository secrets named
-`GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_SERVICE_ACCOUNT`. Run the manual identity-check
-workflow from the exact configured ref. It compares the active account to the expected
-service account without printing either value.
+## Continuous integration
 
-The negative check is also post-approval: attempt the workflow from any other ref or
-repository and confirm authentication fails. Changing an IAM binding to perform that
-test requires another fresh human approval.
+`Cost guard` runs on pull requests and pushes and proves the guard's exact exit
+contract locally: a denied plan exits `1`, a clean plan exits `0`, and empty, malformed,
+or errored input exits `2`.
+
+`Guarded OpenTofu plan` runs only after a push to `main` or from manual dispatch. It
+uses the existing exact-main-ref federation binding, so it deliberately does not run
+for pull requests. It can plan but cannot apply.
+
+After an approved bootstrap apply, use `scripts/configure-github-secrets.sh` from an
+authenticated local shell to transfer sensitive outputs directly to these repository
+secrets:
+
+- `GCP_PROJECT_ID`
+- `GCP_PROJECT_NUMBER`
+- `GCP_STATE_BUCKET`
+- `GITHUB_REPOSITORY_IDENTITY`
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`
+- `GCP_SERVICE_ACCOUNT`
+
+The helper pipes each `tofu output -raw` value directly into `gh secret set`; it never
+prints an identifier. Its only successful output is the secret name. Local repository
+checks are:
+
+```sh
+tofu fmt -check -recursive .
+tofu validate
+scripts/test-cost-guard.sh
+scripts/check-ci-contract.sh
+```
+
+Positive authentication on the authorized `main` ref, a negative authentication run
+from an unauthorized ref, and a successful real guarded plan remain post-configuration
+evidence. They are not established merely by committing these workflows.

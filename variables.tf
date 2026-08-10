@@ -18,16 +18,6 @@ variable "gcp_project_number" {
   }
 }
 
-variable "gcp_billing_account_id" {
-  description = "Billing account already linked to the project; retained as an explicit apply-time identity input."
-  type        = string
-
-  validation {
-    condition     = can(regex("^[0-9A-F]{6}-[0-9A-F]{6}-[0-9A-F]{6}$", var.gcp_billing_account_id))
-    error_message = "gcp_billing_account_id must use the canonical six-six-six uppercase format."
-  }
-}
-
 variable "gcp_region" {
   description = "GCP region used by the landing zone."
   type        = string
@@ -122,4 +112,3 @@ variable "ci_plan_role_id" {
     error_message = "ci_plan_role_id must be a valid custom role ID without hyphens."
   }
 }
-
