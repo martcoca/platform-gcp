@@ -1,0 +1,9 @@
+{
+  "resource_changes": [
+    {
+      "address": "google_compute_instance.example",
+      "type": "google_compute_instance",
+      "change": {"actions": ["create"]}
+    }
+  ]
+}

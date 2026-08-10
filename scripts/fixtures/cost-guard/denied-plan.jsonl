@@ -1,0 +1,1 @@
+{"type":"planned_change","change":{"resource":{"addr":"google_compute_instance.example","resource_type":"google_compute_instance"},"action":"create"}}

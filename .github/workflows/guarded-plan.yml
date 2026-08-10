@@ -1,0 +1,48 @@
+name: Guarded OpenTofu plan
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - name: Initialize remote state
+        run: tofu init -input=false -backend-config="bucket=${{ secrets.GCP_STATE_BUCKET }}"
+      - name: Plan and enforce cost guard
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          tofu plan -input=false -json \
+            -var="gcp_project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="gcp_project_number=${{ secrets.GCP_PROJECT_NUMBER }}" \
+            -var="state_bucket_name=${{ secrets.GCP_STATE_BUCKET }}" \
+            -var="github_repository=${{ secrets.GITHUB_REPOSITORY_IDENTITY }}" \
+            -var='github_ref=refs/heads/main' \
+            | scripts/cost-guard.sh /dev/stdin
+          plan_status=${PIPESTATUS[0]}
+          guard_status=${PIPESTATUS[1]}
+          set -e
+          if [[ "$plan_status" -ne 0 ]]; then
+            exit 1
+          fi
+          case "$guard_status" in
+            0) ;;
+            1|2) exit 1 ;;
+            *) exit 1 ;;
+          esac
+      - name: Publish bounded result
+        run: printf '%s\n' 'Guarded plan completed successfully.' >> "$GITHUB_STEP_SUMMARY"
