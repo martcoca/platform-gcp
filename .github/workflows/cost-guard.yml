@@ -1,5 +1,11 @@
 name: Cost guard
 
+# This repository holds no guard and no denylist. Both travel with the pinned composite
+# action, so what is asserted here is the *consumption*: that the released action still
+# gates this repository's plans the way the deleted local copy did — the same six inputs
+# and the same three exit outcomes, now through `uses:` rather than through `bash
+# scripts/...`.
+
 on:
   pull_request:
   push:
@@ -9,9 +15,88 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  action-contract:
+    name: The released action gates this repository's plans
     runs-on: ubuntu-24.04
+    # The five failing steps carry a failure excuse so this job can assert that they
+    # failed. A job that actually goes red cannot exist in a repository whose merge gate
+    # requires every check green, and `outcome == failure` is the same fact recorded
+    # rather than acted on. The real gate is guarded-plan.yml, where the guard step has no
+    # such excuse and check-ci-contract.sh forbids one there.
     steps:
       - uses: actions/checkout@v4
-      - name: Verify exact cost guard exit contract
-        run: scripts/test-cost-guard.sh
+        with:
+          persist-credentials: false
+
+      - name: A clean plan is allowed
+        id: clean
+        uses: martcoca/cost-guard@v1.0.0
+        with:
+          plan: scripts/fixtures/cost-guard/clean-plan.json
+
+      - name: A denied create fails the step
+        id: denied
+        continue-on-error: true
+        uses: martcoca/cost-guard@v1.0.0
+        with:
+          plan: scripts/fixtures/cost-guard/denied-plan.json
+
+      - name: A denied create in event-stream form fails the step
+        id: denied-events
+        continue-on-error: true
+        uses: martcoca/cost-guard@v1.0.0
+        with:
+          plan: scripts/fixtures/cost-guard/denied-plan.jsonl
+
+      - name: An errored plan fails closed
+        id: errored
+        continue-on-error: true
+        uses: martcoca/cost-guard@v1.0.0
+        with:
+          plan: scripts/fixtures/cost-guard/errored-plan.jsonl
+
+      - name: Unrecognizable input fails closed
+        id: unrecognizable
+        continue-on-error: true
+        uses: martcoca/cost-guard@v1.0.0
+        with:
+          plan: scripts/fixtures/cost-guard/unrecognizable.json
+
+      - name: An empty plan fails closed
+        id: empty
+        continue-on-error: true
+        uses: martcoca/cost-guard@v1.0.0
+        with:
+          plan: scripts/fixtures/cost-guard/empty.json
+
+      - name: Assert every outcome, including that undecidable is no softer than denied
+        shell: bash
+        env:
+          CLEAN: ${{ steps.clean.outcome }}/${{ steps.clean.outputs.verdict }}/${{ steps.clean.outputs.exit-code }}
+          DENIED: ${{ steps.denied.outcome }}/${{ steps.denied.outputs.verdict }}/${{ steps.denied.outputs.exit-code }}
+          DENIED_EVENTS: ${{ steps.denied-events.outcome }}/${{ steps.denied-events.outputs.verdict }}/${{ steps.denied-events.outputs.exit-code }}
+          ERRORED: ${{ steps.errored.outcome }}/${{ steps.errored.outputs.verdict }}/${{ steps.errored.outputs.exit-code }}
+          UNRECOGNIZABLE: ${{ steps.unrecognizable.outcome }}/${{ steps.unrecognizable.outputs.verdict }}/${{ steps.unrecognizable.outputs.exit-code }}
+          EMPTY: ${{ steps.empty.outcome }}/${{ steps.empty.outputs.verdict }}/${{ steps.empty.outputs.exit-code }}
+        run: |
+          set -euo pipefail
+          failed=0
+          assert() {
+            local label=$1 want=$2 got=$3
+            if [[ "$got" != "$want" ]]; then
+              printf '%s: expected %s, got %s\n' "$label" "$want" "$got" >&2
+              failed=1
+            else
+              printf '%s: %s\n' "$label" "$got"
+            fi
+          }
+          assert 'clean plan'          'success/allow/0'       "$CLEAN"
+          assert 'denied create'       'failure/deny/1'        "$DENIED"
+          assert 'denied create (events)' 'failure/deny/1'     "$DENIED_EVENTS"
+          assert 'errored plan'        'failure/undecidable/2' "$ERRORED"
+          assert 'unrecognizable'      'failure/undecidable/2' "$UNRECOGNIZABLE"
+          assert 'empty plan'          'failure/undecidable/2' "$EMPTY"
+          [[ "$failed" -eq 0 ]] || {
+            printf '\nThe released action no longer gates this repository as required.\n' >&2
+            exit 1
+          }

@@ -40,14 +40,25 @@ mv backend.tf backend.tf.bootstrap
 tofu init
 tofu fmt -check -recursive .
 tofu validate
-set -o pipefail
 tofu plan -json -var-file=../config/local/landing-zone.tfvars \
-  | scripts/cost-guard.sh /dev/stdin
+  > landing-zone.plan.json
 ```
 
-The guard and denylist are vendored byte-for-byte from `platform-aws`. Vendoring keeps
-the check available in this repository and in GitHub Actions without a sibling checkout;
-the shared denylist is not weakened.
+The guard is **not** in this repository. It is consumed as a pinned composite action,
+`martcoca/cost-guard`, whose release is recorded once in `config/cost-guard-action.txt`;
+the guard script and the shared denylist travel with it. To run the same check by hand
+against the plan file above, check that release out and run its guard:
+
+```sh
+guard_dir="$(mktemp -d)"
+gh repo clone martcoca/cost-guard "$guard_dir" -- \
+  --depth 1 --branch "$(cut -d@ -f2 config/cost-guard-action.txt)"
+bash "$guard_dir/scripts/cost-guard.sh" landing-zone.plan.json
+```
+
+The plan is written to a file rather than piped into the guard: a pipeline reports the
+last process's status, so a plan that never ran would read as a clean plan. Nothing about
+what is denied is decided here — the denylist is upstream and is not weakened locally.
 
 Stop after the plan. Creating the bucket, workload identity resources, service account,
 or IAM bindings requires fresh human approval. After the approved bootstrap apply has
@@ -63,9 +74,10 @@ Default Credentials; GitHub Actions uses Workload Identity Federation.
 
 ## Continuous integration
 
-`Cost guard` runs on pull requests and pushes and proves the guard's exact exit
-contract locally: a denied plan exits `1`, a clean plan exits `0`, and empty, malformed,
-or errored input exits `2`.
+`Cost guard` runs on pull requests and pushes and proves the released action's exact
+exit contract through `uses:`, against this repository's own fixtures: a denied plan
+exits `1`, a clean plan exits `0`, and empty, malformed, or errored input exits `2`. An
+undecidable verdict fails the step exactly as a denial does.
 
 `Guarded OpenTofu plan` runs only after a push to `main` or from manual dispatch. It
 uses the existing exact-main-ref federation binding, so it deliberately does not run
@@ -89,7 +101,6 @@ checks are:
 ```sh
 tofu fmt -check -recursive .
 tofu validate
-scripts/test-cost-guard.sh
 scripts/check-ci-contract.sh
 ```
 
