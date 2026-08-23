@@ -38,6 +38,19 @@ reject() {
   fi
 }
 
+# A fixed-string match is satisfied by a *comment*. Deleting the guard step but leaving a
+# line of prose that names it passes `require` and leaves the workflow unguarded — the
+# compromised file the obvious check waves through. Structural facts are therefore matched
+# as whole YAML lines: a comment begins with `#` after its indent and cannot match.
+require_line() {
+  local regex=$1 file=$2
+  if ! grep -Eq -- "^[[:space:]]*${regex}[[:space:]]*\$" "$file"; then
+    printf 'Missing required contract line /%s/ in %s.\n' "$regex" "$file" >&2
+    printf 'It must be a real YAML line, not a mention of one in a comment.\n' >&2
+    exit 1
+  fi
+}
+
 # --- the guard and its denylist are not in this repository ----------------------------
 #
 # Absent from the working tree *and* untracked. A file that is only deleted on disk but
@@ -74,8 +87,8 @@ while IFS= read -r used; do
     printf 'Workflow uses %s but the pin in %s is %s.\n' "$used" "$pin_file" "$pin" >&2
     exit 1
   fi
-done < <(grep -hEo 'uses:[[:space:]]*[A-Za-z0-9._-]+/cost-guard@[^[:space:]]+' \
-  .github/workflows/*.yml | sed 's/uses:[[:space:]]*//')
+done < <(grep -hE '^[[:space:]]*uses:[[:space:]]*[A-Za-z0-9._-]+/cost-guard@[^[:space:]]+[[:space:]]*$' \
+  .github/workflows/*.yml | sed 's/^[[:space:]]*uses:[[:space:]]*//; s/[[:space:]]*$//')
 if [[ "$guard_uses" -eq 0 ]]; then
   printf 'No workflow uses the cost-guard action.\n' >&2
   exit 1
@@ -99,9 +112,9 @@ require 'tofu_wrapper: false' "$plan_workflow"
 
 require 'tofu plan -input=false -no-color -json' "$plan_workflow"
 require '>"$RUNNER_TEMP/tofu-plan.json" 2>"$RUNNER_TEMP/tofu-plan.err"' "$plan_workflow"
-require "uses: ${pin}" "$plan_workflow"
-require 'plan: ${{ runner.temp }}/tofu-plan.json' "$plan_workflow"
-require 'id: cost-guard' "$plan_workflow"
+require_line "uses: ${pin//./\\.}" "$plan_workflow"
+require_line 'plan: \$\{\{ runner\.temp \}\}/tofu-plan\.json' "$plan_workflow"
+require_line 'id: cost-guard' "$plan_workflow"
 require 'GUARD_OUTCOME: ${{ steps.cost-guard.outcome }}' "$plan_workflow"
 require 'GUARD_VERDICT: ${{ steps.cost-guard.outputs.verdict }}' "$plan_workflow"
 require '[[ "$GUARD_OUTCOME" == "success" ]] || exit 1' "$plan_workflow"
@@ -133,8 +146,8 @@ reject 'continue-on-error' "$plan_workflow"
 # Ordering: a step that changes infrastructure must not be insertable between the plan and
 # the guard. Nothing here applies today and the assertions below keep it that way; this one
 # additionally pins the sequence.
-plan_line=$(grep -n 'tofu plan -input=false -no-color -json' "$plan_workflow" | head -n 1 | cut -d: -f1)
-guard_line=$(grep -n "uses: ${pin}" "$plan_workflow" | head -n 1 | cut -d: -f1)
+plan_line=$(grep -nE '^[[:space:]]*tofu plan -input=false -no-color -json' "$plan_workflow" | head -n 1 | cut -d: -f1)
+guard_line=$(grep -nE "^[[:space:]]*uses:[[:space:]]*${pin//./\\.}[[:space:]]*\$" "$plan_workflow" | head -n 1 | cut -d: -f1)
 if [[ -z "$plan_line" || -z "$guard_line" || "$guard_line" -le "$plan_line" ]]; then
   printf 'The guard step must follow the plan step in %s.\n' "$plan_workflow" >&2
   exit 1
@@ -154,7 +167,7 @@ require 'pull_request:' "$cost_workflow"
 require 'push:' "$cost_workflow"
 require 'workflow_dispatch:' "$cost_workflow"
 require 'contents: read' "$cost_workflow"
-require "uses: ${pin}" "$cost_workflow"
+require_line "uses: ${pin//./\\.}" "$cost_workflow"
 # The three exit outcomes, asserted through the action. `undecidable` failing is the one
 # most easily lost when moving to a wrapper, so it is named here rather than implied.
 require "assert 'clean plan'          'success/allow/0'" "$cost_workflow"
@@ -168,14 +181,14 @@ for fixture in clean-plan.json denied-plan.json denied-plan.jsonl \
     printf 'Missing fixture scripts/fixtures/cost-guard/%s.\n' "$fixture" >&2
     exit 1
   }
-  require "plan: scripts/fixtures/cost-guard/$fixture" "$cost_workflow"
+  require_line "plan: scripts/fixtures/cost-guard/${fixture//./\\.}" "$cost_workflow"
 done
 
 # --- this check must actually run --------------------------------------------------
 #
 # A contract check nobody invokes is a comment. It was one here until this packet.
 
-require 'scripts/check-ci-contract.sh' "$contract_workflow"
+require_line 'run: scripts/check-ci-contract\.sh' "$contract_workflow"
 
 # --- the public inputs and the secret handoff ------------------------------------------
 
