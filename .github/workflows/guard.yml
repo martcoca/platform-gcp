@@ -33,6 +33,13 @@ jobs:
       - name: Workflow permissions are explicit
         run: scripts/check-workflow-permissions.sh
 
+      # The cost guard is consumed from a pinned release, not carried here. This is what
+      # asserts that: no local copy is back, every use of the action matches the single
+      # recorded pin, and the guard step is still a gate rather than a decoration. It was
+      # a script nothing invoked until 0010-E01-T04 wired it in.
+      - name: CI contract
+        run: scripts/check-ci-contract.sh
+
       - name: A completed packet arrives with its evidence
         if: github.event_name == 'pull_request'
         run: scripts/check-evidence.sh "${{ github.event.pull_request.base.sha }}"

@@ -1,5 +1,10 @@
 name: Guarded OpenTofu plan
 
+# The cost guard is not in this repository. It is consumed as a pinned composite action
+# from martcoca/cost-guard, so this repository holds neither the guard nor its denylist.
+# The pin is recorded once in config/cost-guard-action.txt and asserted against every
+# `uses:` below by scripts/check-ci-contract.sh.
+
 on:
   push:
     branches: [main]
@@ -29,7 +34,7 @@ jobs:
             printf '%s\n' 'Remote state initialization failed.' >&2
             exit 1
           fi
-      - name: Plan and enforce cost guard
+      - name: Write the plan to a file
         env:
           TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_gcp_project_number: ${{ secrets.GCP_PROJECT_NUMBER }}
@@ -38,20 +43,55 @@ jobs:
           TF_VAR_github_ref: refs/heads/main
         shell: bash
         run: |
-          set +e
-          set -o pipefail
-          tofu plan -input=false -json 2>/dev/null | scripts/cost-guard.sh /dev/stdin 2>/dev/null
-          statuses=("${PIPESTATUS[@]}")
-          plan_status=${statuses[0]}
-          guard_status=${statuses[1]}
-          set -e
-          if [[ "$plan_status" -ne 0 ]]; then
+          set -uo pipefail
+          # The plan goes to a file and the guard is handed the path. It is deliberately
+          # not piped into the guard: a pipeline reports the *last* process's status, so a
+          # plan that never ran reads as a clean plan. That has already produced a wrong
+          # conclusion in this organization once.
+          #
+          # The plan's own error stream is captured to a file rather than dropped. It is
+          # not echoed to the log because this repository is public and that stream can
+          # carry the project and bucket identifiers; it stays readable on the runner for
+          # the life of the job.
+          tofu plan -input=false -no-color -json \
+            >"$RUNNER_TEMP/tofu-plan.json" 2>"$RUNNER_TEMP/tofu-plan.err"
+          status=$?
+          if [[ "$status" -ne 0 ]]; then
             printf '%s\n' 'Guarded plan result: plan failure.' >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          case "$guard_status" in
-            0) printf '%s\n' 'Guarded plan result: allow.' >> "$GITHUB_STEP_SUMMARY" ;;
-            1) printf '%s\n' 'Guarded plan result: deny.' >> "$GITHUB_STEP_SUMMARY"; exit 1 ;;
-            2) printf '%s\n' 'Guarded plan result: undecidable.' >> "$GITHUB_STEP_SUMMARY"; exit 1 ;;
-            *) printf '%s\n' 'Guarded plan result: undecidable.' >> "$GITHUB_STEP_SUMMARY"; exit 1 ;;
+      # The gate. The action exits 0 / 1 / 2 and the step carries that exit code, so a
+      # denial and an undecidable verdict each fail the job on their own. This step gets
+      # no failure excuse, and check-ci-contract.sh forbids one anywhere in this file — a
+      # guard that is allowed to fail is a workflow that looks guarded and is not.
+      #
+      # The guard's own diagnostic — which resource was denied, or why no verdict could be
+      # reached — is replayed by the action into this step's log and the job summary. The
+      # old pipeline discarded it.
+      - name: Cost guard
+        id: cost-guard
+        uses: martcoca/cost-guard@v1.0.0
+        with:
+          plan: ${{ runner.temp }}/tofu-plan.json
+      - name: Record the guard verdict
+        if: always()
+        shell: bash
+        env:
+          GUARD_OUTCOME: ${{ steps.cost-guard.outcome }}
+          GUARD_VERDICT: ${{ steps.cost-guard.outputs.verdict }}
+        run: |
+          set -euo pipefail
+          # Reporting only. The guard step has already failed the job if the guard failed;
+          # this step must never be the thing that decides, and must never turn a failed
+          # guard into a passing job — hence the re-assertion at the end. A guard step that
+          # did not run at all is undecidable, not clean.
+          if [[ -z "$GUARD_OUTCOME" || "$GUARD_OUTCOME" == "skipped" ]]; then
+            printf '%s\n' 'Guarded plan result: undecidable.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          case "$GUARD_VERDICT" in
+            allow) printf '%s\n' 'Guarded plan result: allow.' >> "$GITHUB_STEP_SUMMARY" ;;
+            deny)  printf '%s\n' 'Guarded plan result: deny.' >> "$GITHUB_STEP_SUMMARY" ;;
+            *)     printf '%s\n' 'Guarded plan result: undecidable.' >> "$GITHUB_STEP_SUMMARY" ;;
           esac
+          [[ "$GUARD_OUTCOME" == "success" ]] || exit 1

@@ -4,4 +4,4 @@
 *.tfstate.*
 config/local/
 runtime/
-
+*.plan.json
