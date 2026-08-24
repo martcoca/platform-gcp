@@ -30,42 +30,54 @@ jobs:
 
       - name: A clean plan is allowed
         id: clean
-        uses: martcoca/cost-guard@v1.0.0
+        uses: martcoca/cost-guard@v1.0.1
         with:
           plan: scripts/fixtures/cost-guard/clean-plan.json
 
       - name: A denied create fails the step
         id: denied
         continue-on-error: true
-        uses: martcoca/cost-guard@v1.0.0
+        uses: martcoca/cost-guard@v1.0.1
         with:
           plan: scripts/fixtures/cost-guard/denied-plan.json
+
+      # Cloud NAT was added to the shared denylist in cost-guard v1.0.1. This step is the
+      # propagation test: it passes only if the pinned release actually carries that
+      # denial. Pinned to a release that predates it, the plan is allowed and this job
+      # goes red — which is the point. A consumer that is behind is otherwise
+      # indistinguishable from one that is current and has nothing to deny.
+      - name: A denied Cloud NAT create fails the step
+        id: cloud-nat
+        continue-on-error: true
+        uses: martcoca/cost-guard@v1.0.1
+        with:
+          plan: scripts/fixtures/cost-guard/denied-cloud-nat.json
 
       - name: A denied create in event-stream form fails the step
         id: denied-events
         continue-on-error: true
-        uses: martcoca/cost-guard@v1.0.0
+        uses: martcoca/cost-guard@v1.0.1
         with:
           plan: scripts/fixtures/cost-guard/denied-plan.jsonl
 
       - name: An errored plan fails closed
         id: errored
         continue-on-error: true
-        uses: martcoca/cost-guard@v1.0.0
+        uses: martcoca/cost-guard@v1.0.1
         with:
           plan: scripts/fixtures/cost-guard/errored-plan.jsonl
 
       - name: Unrecognizable input fails closed
         id: unrecognizable
         continue-on-error: true
-        uses: martcoca/cost-guard@v1.0.0
+        uses: martcoca/cost-guard@v1.0.1
         with:
           plan: scripts/fixtures/cost-guard/unrecognizable.json
 
       - name: An empty plan fails closed
         id: empty
         continue-on-error: true
-        uses: martcoca/cost-guard@v1.0.0
+        uses: martcoca/cost-guard@v1.0.1
         with:
           plan: scripts/fixtures/cost-guard/empty.json
 
@@ -74,6 +86,7 @@ jobs:
         env:
           CLEAN: ${{ steps.clean.outcome }}/${{ steps.clean.outputs.verdict }}/${{ steps.clean.outputs.exit-code }}
           DENIED: ${{ steps.denied.outcome }}/${{ steps.denied.outputs.verdict }}/${{ steps.denied.outputs.exit-code }}
+          CLOUD_NAT: ${{ steps.cloud-nat.outcome }}/${{ steps.cloud-nat.outputs.verdict }}/${{ steps.cloud-nat.outputs.exit-code }}
           DENIED_EVENTS: ${{ steps.denied-events.outcome }}/${{ steps.denied-events.outputs.verdict }}/${{ steps.denied-events.outputs.exit-code }}
           ERRORED: ${{ steps.errored.outcome }}/${{ steps.errored.outputs.verdict }}/${{ steps.errored.outputs.exit-code }}
           UNRECOGNIZABLE: ${{ steps.unrecognizable.outcome }}/${{ steps.unrecognizable.outputs.verdict }}/${{ steps.unrecognizable.outputs.exit-code }}
@@ -92,6 +105,7 @@ jobs:
           }
           assert 'clean plan'          'success/allow/0'       "$CLEAN"
           assert 'denied create'       'failure/deny/1'        "$DENIED"
+          assert 'denied Cloud NAT'    'failure/deny/1'        "$CLOUD_NAT"
           assert 'denied create (events)' 'failure/deny/1'     "$DENIED_EVENTS"
           assert 'errored plan'        'failure/undecidable/2' "$ERRORED"
           assert 'unrecognizable'      'failure/undecidable/2' "$UNRECOGNIZABLE"
