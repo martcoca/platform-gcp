@@ -30,14 +30,14 @@ jobs:
 
       - name: A clean plan is allowed
         id: clean
-        uses: martcoca/cost-guard@v1.0.1
+        uses: martcoca/cost-guard@v1.0.2
         with:
           plan: scripts/fixtures/cost-guard/clean-plan.json
 
       - name: A denied create fails the step
         id: denied
         continue-on-error: true
-        uses: martcoca/cost-guard@v1.0.1
+        uses: martcoca/cost-guard@v1.0.2
         with:
           plan: scripts/fixtures/cost-guard/denied-plan.json
 
@@ -49,35 +49,35 @@ jobs:
       - name: A denied Cloud NAT create fails the step
         id: cloud-nat
         continue-on-error: true
-        uses: martcoca/cost-guard@v1.0.1
+        uses: martcoca/cost-guard@v1.0.2
         with:
           plan: scripts/fixtures/cost-guard/denied-cloud-nat.json
 
       - name: A denied create in event-stream form fails the step
         id: denied-events
         continue-on-error: true
-        uses: martcoca/cost-guard@v1.0.1
+        uses: martcoca/cost-guard@v1.0.2
         with:
           plan: scripts/fixtures/cost-guard/denied-plan.jsonl
 
       - name: An errored plan fails closed
         id: errored
         continue-on-error: true
-        uses: martcoca/cost-guard@v1.0.1
+        uses: martcoca/cost-guard@v1.0.2
         with:
           plan: scripts/fixtures/cost-guard/errored-plan.jsonl
 
       - name: Unrecognizable input fails closed
         id: unrecognizable
         continue-on-error: true
-        uses: martcoca/cost-guard@v1.0.1
+        uses: martcoca/cost-guard@v1.0.2
         with:
           plan: scripts/fixtures/cost-guard/unrecognizable.json
 
       - name: An empty plan fails closed
         id: empty
         continue-on-error: true
-        uses: martcoca/cost-guard@v1.0.1
+        uses: martcoca/cost-guard@v1.0.2
         with:
           plan: scripts/fixtures/cost-guard/empty.json
 
