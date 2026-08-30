@@ -9,6 +9,7 @@ Check, and enough context to execute without reading another repository.
 |---|---|---|---|
 | 1 | [`0010-E01-T04.md`](0010-E01-T04.md) | done | Consume the released cost guard action and delete this repository's local copies |
 | 2 | [`0010-E02-T04.md`](0010-E02-T04.md) | done | Report when the cost guard pin is behind the current release, including on a schedule |
+| 3 | [`0008-E02-T01.md`](0008-E02-T01.md) | not started | An Artifact Registry and a federated publisher for `work-tracker`. **Authored only — the Founder applies.** Blocking a product today |
 
 Take the packet the Founder names. Otherwise take the next one in this table whose
 `Status:` is not `done`. The table is the order; the numbers are only identity.
