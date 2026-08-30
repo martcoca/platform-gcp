@@ -1,0 +1,61 @@
+name: Cost guard freshness
+
+# Does this repository still run the current cost guard?
+#
+# The guarded plan reports the same signal, but only when someone pushes. T01's evidence is
+# explicit that the repository nobody pushes to is the one most likely to drift, and this
+# repository is exactly that: `Guarded OpenTofu plan` runs on merges to `main`, which can be
+# weeks apart. An incidental push is not a detection strategy, so this asks on a clock.
+#
+# This is the run where staleness is not ignorable — `fail-on-stale: true`, so a pin behind
+# the current release turns this workflow red and stays red until someone bumps it. That is
+# the whole point: a denial added after the pinned release is not in force here, and nothing
+# else in this repository would say so.
+#
+# `unknown` never fails, whatever `fail-on-stale` is set to. A lookup that could not happen
+# is not evidence of staleness, and failing on it would give this repository's CI a network
+# dependency its plans do not have.
+
+on:
+  schedule:
+    # 06:17 UTC daily. Off the hour deliberately: scheduled workflows on the hour queue
+    # behind everyone else's, and this one is worth nothing if it is late enough to be
+    # skipped under load.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    name: The pin is the current release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Read the cost guard pin
+        id: pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'pin=%s\n' "$(tr -d '[:space:]' < config/cost-guard-action.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Cost guard freshness
+        id: freshness
+        uses: martcoca/cost-guard/freshness@v1.0.2
+        with:
+          pin: ${{ steps.pin.outputs.pin }}
+          fail-on-stale: true
+
+      - name: Say what was found
+        if: always()
+        shell: bash
+        env:
+          STATUS: ${{ steps.freshness.outputs.status }}
+          DETAIL: ${{ steps.freshness.outputs.detail }}
+        run: |
+          set -euo pipefail
+          printf 'cost guard pin: %s — %s\n' "${STATUS:-unreported}" "${DETAIL:-no detail}"

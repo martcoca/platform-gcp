@@ -83,6 +83,18 @@ undecidable verdict fails the step exactly as a denial does.
 uses the existing exact-main-ref federation binding, so it deliberately does not run
 for pull requests. It can plan but cannot apply.
 
+`Cost guard freshness` asks daily, at 06:17 UTC, whether the pin in
+`config/cost-guard-action.txt` is still the current cost-guard release, and fails when it
+is behind. It runs on a clock because `Guarded OpenTofu plan` only runs on merges to
+`main`, which can be weeks apart — a repository nobody pushes to is the one most likely to
+be running an old denylist without knowing. The same check reports (without failing) on
+every pull request and beside the guard step itself.
+
+Freshness never decides a plan. It is a separate step from the guard, it runs after the
+gate, and a lookup that cannot be completed reports `unknown` rather than `current` — and
+`unknown` never fails a build, because CI that depends on a release lookup has a network
+dependency the guard itself deliberately does not.
+
 After an approved bootstrap apply, use `scripts/configure-github-secrets.sh` from an
 authenticated local shell to transfer sensitive outputs directly to these repository
 secrets:

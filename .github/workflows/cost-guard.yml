@@ -15,6 +15,32 @@ permissions:
   contents: read
 
 jobs:
+  # Freshness on every pull request and push, reporting only. `fail-on-stale: false`
+  # because a pin that has fallen behind is not a reason to block work that has nothing to
+  # do with the guard — the scheduled run is where it is allowed to fail. Reported here
+  # anyway so the fact is in front of whoever is already looking at a change.
+  freshness:
+    name: Is the pinned guard the current release?
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Read the cost guard pin
+        id: pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'pin=%s\n' "$(tr -d '[:space:]' < config/cost-guard-action.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Cost guard freshness
+        id: freshness
+        uses: martcoca/cost-guard/freshness@v1.0.2
+        with:
+          pin: ${{ steps.pin.outputs.pin }}
+          fail-on-stale: false
+
   action-contract:
     name: The released action gates this repository's plans
     runs-on: ubuntu-24.04
