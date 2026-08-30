@@ -19,6 +19,15 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      # The pin file is the single source of truth for which release this repository runs.
+      # The freshness action takes the pin as a *string*, so it is read here rather than
+      # duplicated into a `with:` literal that could drift away from the file.
+      - name: Read the cost guard pin
+        id: pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'pin=%s\n' "$(tr -d '[:space:]' < config/cost-guard-action.txt)" >> "$GITHUB_OUTPUT"
       - uses: opentofu/setup-opentofu@v1
         with:
           tofu_version: 1.12.5
@@ -73,6 +82,21 @@ jobs:
         uses: martcoca/cost-guard@v1.0.2
         with:
           plan: ${{ runner.temp }}/tofu-plan.json
+      # Freshness is a separate signal from the verdict, and deliberately a separate step.
+      # `if: always()` because a denied plan fails the guard step above, and a denial is
+      # exactly when it matters most whether the denylist in force is the current one.
+      #
+      # It cannot change the verdict: it computes none, it runs after the gate has already
+      # decided, and `fail-on-stale` is false here. A stale pin must not fail a plan that
+      # is fine, and a lookup that could not happen must not fail anything at all — the
+      # scheduled run below is what makes staleness un-ignorable.
+      - name: Cost guard freshness
+        id: freshness
+        if: always()
+        uses: martcoca/cost-guard/freshness@v1.0.2
+        with:
+          pin: ${{ steps.pin.outputs.pin }}
+          fail-on-stale: false
       - name: Record the guard verdict
         if: always()
         shell: bash

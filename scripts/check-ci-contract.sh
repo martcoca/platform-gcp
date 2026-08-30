@@ -161,6 +161,78 @@ if grep -Eqi 'tofu[[:space:]]+apply|terraform[[:space:]]+apply' .github/workflow
   exit 1
 fi
 
+# --- freshness: this repository cannot be silently behind ------------------------------
+#
+# A separate signal from the verdict, and it must stay separate. The guard decides with no
+# network; freshness can only be known by asking. What is asserted here is that the asking
+# happens, that it happens on a clock as well as on a push, and that it cannot quietly be
+# deleted.
+
+pin_ref="${pin##*@}"
+freshness_workflow=.github/workflows/cost-guard-freshness.yml
+
+[[ -f "$freshness_workflow" ]] || {
+  printf 'Missing %s: nothing asks whether the pin is current when nobody pushes.\n' \
+    "$freshness_workflow" >&2
+  exit 1
+}
+
+# Every use of the freshness sub-action must sit at the same release as the guard itself.
+# They ship from one repository; letting them drift apart would mean asking one version
+# whether a different version is current.
+freshness_uses=0
+while IFS= read -r used; do
+  [[ -n "$used" ]] || continue
+  freshness_uses=$((freshness_uses + 1))
+  used_ref="${used##*@}"
+  if [[ "$used_ref" != "$pin_ref" ]]; then
+    printf 'Workflow uses the freshness action at %s but the pin in %s is %s.\n' \
+      "$used_ref" "$pin_file" "$pin_ref" >&2
+    exit 1
+  fi
+done < <(grep -hE '^[[:space:]]*uses:[[:space:]]*[A-Za-z0-9._-]+/cost-guard/freshness@[^[:space:]]+[[:space:]]*$' \
+  .github/workflows/*.yml | sed 's/^[[:space:]]*uses:[[:space:]]*//; s/[[:space:]]*$//')
+if [[ "$freshness_uses" -lt 3 ]]; then
+  printf 'The freshness action must run beside the guard, on pull requests, and on a\n' >&2
+  printf 'schedule. Found %s use(s); expected at least 3.\n' "$freshness_uses" >&2
+  exit 1
+fi
+
+# Beside the guard, and running even when the guard failed — a denial is exactly when it
+# matters whether the denylist in force is the current one.
+require_line 'id: freshness' "$plan_workflow"
+require_line 'if: always\(\)' "$plan_workflow"
+require_line 'pin: \$\{\{ steps\.pin\.outputs\.pin \}\}' "$plan_workflow"
+require_line 'fail-on-stale: false' "$plan_workflow"
+# The pin reaches the action from the pin file, not from a literal that could drift.
+require_line 'printf .pin=%s\\n. "\$\(tr -d .\[:space:\]. < config/cost-guard-action\.txt\)" >> "\$GITHUB_OUTPUT"' "$plan_workflow"
+
+# Freshness must not be able to decide the plan. It runs after the gate, and it is the
+# scheduled run — never this one — that is allowed to fail on a stale pin.
+freshness_line=$(grep -nE '^[[:space:]]*id: freshness[[:space:]]*$' "$plan_workflow" | head -n 1 | cut -d: -f1)
+if [[ -z "$freshness_line" || "$freshness_line" -le "$guard_line" ]]; then
+  printf 'The freshness step must follow the guard step in %s.\n' "$plan_workflow" >&2
+  exit 1
+fi
+if grep -Eq '^[[:space:]]*fail-on-stale: true[[:space:]]*$' "$plan_workflow"; then
+  printf 'The guarded plan must not fail on a stale pin: a pin that has fallen behind is\n' >&2
+  printf 'not a reason to fail a plan that is otherwise fine.\n' >&2
+  exit 1
+fi
+
+# On pull requests: reported, never blocking.
+require_line 'fail-on-stale: false' "$cost_workflow"
+
+# On a clock: reported, and not ignorable.
+require_line 'fail-on-stale: true' "$freshness_workflow"
+require 'schedule:' "$freshness_workflow"
+require_line "- cron: '[0-9*/, -]+'" "$freshness_workflow"
+require_line 'workflow_dispatch:' "$freshness_workflow"
+require_line 'contents: read' "$freshness_workflow"
+# A scheduled run that only ever reports `current` would be indistinguishable from one
+# that never ran. The action never fails on `unknown`, so `true` here is the only place
+# staleness is allowed to turn something red.
+
 # --- the demonstration that the consumed action behaves like the deleted local one -----
 
 require 'pull_request:' "$cost_workflow"
