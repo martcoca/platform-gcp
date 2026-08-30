@@ -112,3 +112,85 @@ variable "ci_plan_role_id" {
     error_message = "ci_plan_role_id must be a valid custom role ID without hyphens."
   }
 }
+
+variable "work_tracker_repository" {
+  description = "Immutable work-tracker repository identity exactly as issued inside the GitHub OIDC subject."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[^/@[:space:]]+@[0-9]+/[^/@[:space:]]+@[0-9]+$", var.work_tracker_repository))
+    error_message = "work_tracker_repository must be the immutable owner@id/name@id identity from the OIDC subject. The mutable owner/name form is rejected: a repository deleted and recreated under the same name would silently inherit this trust."
+  }
+}
+
+variable "work_tracker_ref" {
+  description = "One exact Git ref in work-tracker allowed to publish images."
+  type        = string
+  default     = "refs/heads/main"
+
+  validation {
+    condition     = can(regex("^refs/(heads|tags)/[^[:space:]*?]+$", var.work_tracker_ref))
+    error_message = "work_tracker_ref must be one exact branch or tag ref without wildcards."
+  }
+}
+
+variable "artifact_registry_repository_id" {
+  description = "ID of the Artifact Registry repository holding product container images."
+  type        = string
+  default     = "product-images"
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{1,62}$", var.artifact_registry_repository_id))
+    error_message = "artifact_registry_repository_id must be 2-63 lowercase letters, digits, or hyphens starting with a letter."
+  }
+}
+
+variable "work_tracker_publisher_account_id" {
+  description = "Account ID of the keyless service account work-tracker impersonates to push images."
+  type        = string
+  default     = "work-tracker-publisher"
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.work_tracker_publisher_account_id))
+    error_message = "work_tracker_publisher_account_id must be a valid 6-30 character service-account ID."
+  }
+}
+
+variable "work_tracker_pool_id" {
+  description = "ID of the workload identity pool dedicated to work-tracker."
+  type        = string
+  default     = "work-tracker"
+
+  validation {
+    condition = (
+      can(regex("^[a-z0-9-]{4,32}$", var.work_tracker_pool_id)) &&
+      !startswith(var.work_tracker_pool_id, "gcp-")
+    )
+    error_message = "work_tracker_pool_id must be 4-32 lowercase letters, digits, or hyphens and cannot start with gcp-."
+  }
+}
+
+variable "work_tracker_provider_id" {
+  description = "ID of the OIDC provider inside work-tracker's own pool."
+  type        = string
+  default     = "work-tracker"
+
+  validation {
+    condition = (
+      can(regex("^[a-z0-9-]{4,32}$", var.work_tracker_provider_id)) &&
+      !startswith(var.work_tracker_provider_id, "gcp-")
+    )
+    error_message = "work_tracker_provider_id must be 4-32 lowercase letters, digits, or hyphens and cannot start with gcp-."
+  }
+}
+
+variable "product_image_publisher_role_id" {
+  description = "ID of the custom role granting push-only access to the product image repository."
+  type        = string
+  default     = "productImagePublisher"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9._]{3,64}$", var.product_image_publisher_role_id))
+    error_message = "product_image_publisher_role_id must be a valid custom role ID without hyphens."
+  }
+}

@@ -95,6 +95,29 @@ gate, and a lookup that cannot be completed reports `unknown` rather than `curre
 `unknown` never fails a build, because CI that depends on a release lookup has a network
 dependency the guard itself deliberately does not.
 
+## Serving a product
+
+This landing zone publishes a container registry and a federated publishing identity for
+`work-tracker`. Four outputs are the whole consumer contract, so a consuming repository
+never has to ask a person for them:
+
+| Output | What it is |
+|---|---|
+| `artifact_registry_host` | `<region>-docker.pkg.dev` |
+| `product_image_repository` | `HOST/PROJECT/REPOSITORY` — append `/<image>:<tag>` |
+| `work_tracker_workload_identity_provider` | provider resource name to present a GitHub OIDC token to |
+| `work_tracker_publisher_service_account_email` | service account to impersonate after federation |
+
+`work-tracker` gets its **own** workload identity pool, provider, condition and service
+account. The landing zone's own federation is untouched: a principal is named
+`principal://…/workloadIdentityPools/<pool>/subject/<subject>`, which is pool-scoped, so a
+separate pool makes the isolation structural rather than something both conditions have to
+keep maintaining.
+
+The publishing identity may push images and read what push requires. It cannot delete an
+image, create or reconfigure a repository, touch state, alter IAM, or deploy. Deployment is
+a different authority and a later packet.
+
 After an approved bootstrap apply, use `scripts/configure-github-secrets.sh` from an
 authenticated local shell to transfer sensitive outputs directly to these repository
 secrets:
