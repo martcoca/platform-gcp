@@ -9,3 +9,4 @@ runtime/
 # Doctrine forbids committing these. Enforced by scripts/check-ignore-contract.sh
 # after a saved plan carrying an OAuth client secret reached a public repository.
 *.tfvars
+.agentic/
