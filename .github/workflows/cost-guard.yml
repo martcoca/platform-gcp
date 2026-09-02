@@ -26,6 +26,8 @@ jobs:
   freshness:
     name: Is the pinned guard the current release?
     runs-on: ubuntu-24.04
+    # A job with no cap can burn to GitHub's 6-hour default. One did: 4h19m.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,6 +50,8 @@ jobs:
   action-contract:
     name: The released action gates this repository's plans
     runs-on: ubuntu-24.04
+    # A job with no cap can burn to GitHub's 6-hour default. One did: 4h19m.
+    timeout-minutes: 30
     # The five failing steps carry a failure excuse so this job can assert that they
     # failed. A job that actually goes red cannot exist in a repository whose merge gate
     # requires every check green, and `outcome == failure` is the same fact recorded
